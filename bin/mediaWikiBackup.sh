@@ -26,13 +26,16 @@
 # If not, see <http://www.gnu.org/licenses/>.
 #
 # Description:
-# <LONGER-DESCRIPTION>
+# This scripts creates a lockfile in every MediaWiki instance found via webapp-
+# config to prevent changes on the database, dumps the databases via an exeternal
+# dump script, runs a so called post job to copy the files and dumps away and
+# removes the locks again.
 #
 # Usage:
-# mediaWikiBackup.sh <OPTIONS-AND-ARGUMENTS>
+# mediaWikiBackup.sh
 #
 # Example:
-# mediaWikiBackup.sh <EXAMPLE-OPTIONS-AND-ARGUMENTS>
+# mediaWikiBackup.sh
 ################################################################################
 
 
