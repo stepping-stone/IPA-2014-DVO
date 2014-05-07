@@ -76,6 +76,27 @@ errorCount=0
 # Functions
 ################################################################################
 
+# Check if the last command run successful
+# $1: Name of the command
+# $2: Exit status of the command
+# $3: What to print if it failed
+# $4: Severity as one of debug, info, error, die
+function checkCmd () {
+   if [ ${?} != 0 ]
+   then
+      severity="error"
+      if [ "${4}" != "" ]
+      then
+         severity="${4}"
+      fi
+
+      ${severity} "Command ${1} failed with status ${2}: ${3}"
+      errorCount=$((errorCount + 1))
+   else
+      debug "Successfully run ${1} "
+   fi
+}
+
 ################################################################################
 # The actual start of the script
 ################################################################################
@@ -84,7 +105,7 @@ errorCount=0
 # Initialization
 
 # Check if all commands are present
-for cmd in "WEBAP_CMD"
+for cmd in "${WEBAP_CMD}"
 do
    test -x ${!cmd} || die "Missing command ${cmd}"
 done
@@ -92,12 +113,17 @@ done
 # Find instances to backup
 if [ "${INSTANCES}" == "" ]
 then
-   INSTANCES="$( $WEBAP_CMD --list-installs mediawikia )"
+   cmd="$WEBAP_CMD --list-installs mediawiki"
+   INSTANCES="$( ${cmd} )"
+   checkCmd "${cmd}" "$?" "output is '${INSTANCES}'" "die"
 fi
+
+info "Found the following instances: $( echo "${INSTANCES}" | tr "\n" " " )"
 
 ##############
 # Locking
 #
+
 for instance in ${INSTANCES}
 do
    info "Locking ${instance}"
@@ -111,8 +137,10 @@ do
    else
       # Write the message to the lock file
       echo "${LOCK_MSG}" >${lockFile}
+      checkCmd "writing to ${lockFile}" "$?" ""
       # Change permission so that the webserver can read the file
       chmod a+r ${lockFile}
+      checkCmd "chmod on ${lockFile}" "$?" ""
    fi
 
 done
@@ -122,32 +150,17 @@ done
 # Dumping
 #
 info "Dumping the databases"
-dumpLog="$( ${DBDUMP_CMD} &2>1 )"
-if [ ${?} != 0 ]
-then
-   error "Dumping the databases failed with the following error:"
-   error "${dumpLog}"
-   errorCount=$((errorCount + 1))
-else
-   info "Success. The dump says:"
-   info "${dumpLog}"
-fi
+${DBDUMP_CMD}
+checkCmd "${DBDUMP_CMD}" "$?" "Check the mysql-dump script log"
+
 
 ##############
 # Copying
 #
 info "Runnig the copy command"
-# copyLog="$( ${POST_JOB} )"
-copyLog="$( true )"
-if [ ${?} != 0 ]
-then
-   error "The copy command failed with the following error:"
-   error "${copyLog}"
-   errorCount=$((errorCount + 1))
-else
-   info "Success. The dump says:"
-   info "${copyLog}"
-fi
+${POST_JOB}
+checkCmd "${POST_JOB}" "$?" "Check the online backup script log"
+
 
 ##############
 # Unlocking
@@ -177,6 +190,6 @@ then
    info "Everything went fine. Exiting."
    exit 0
 else
-   error "There have been error. Exiting."
+   error "There have been errors. Exiting."
    exit 1
 fi
