@@ -51,10 +51,17 @@ source "$CONFIG_FILE"
 
 ##########
 # Source some libraries
-LIB_DIR=${LIB_DIR:="$(dirname $0)/../lib/bash"}
+# LIB_DIR=${LIB_DIR:="$(dirname $0)/../lib/bash"}
+LIB_DIR=${LIB_DIR:="/usr/share/stepping-stone/lib/bash"}
 
-#source "${LIB_DIR}/input-output.lib.sh"
-#source "${LIB_DIR}/syslog.lib.sh"
+source "${LIB_DIR}/input-output.lib.sh" && source "${LIB_DIR}/syslog.lib.sh"
+if [ ${?} != 0 ]
+then
+   echo "Could not source the needed libs" >&2
+   exit 1
+fi
+
+info "Starting $(basename $0)"
 
 ##########
 # Set the commands (if they have not been set before)
@@ -63,29 +70,11 @@ WEBAP_CMD="/usr/sbin/webapp-config"
 
 LOCK_MSG="${LOCK_MSG_EN}"
 
-UMASK=${UMASK:='077'}
-
+errorCount=0
 
 ################################################################################
 # Functions
 ################################################################################
-
-function info ()
-{
-   echo "$1" >&2
-}
-
-function error ()
-{
-   echo "$1" >&2
-}
-
-function die ()
-{
-   echo "$1" >&2
-   exit 1
-}
-
 
 ################################################################################
 # The actual start of the script
@@ -95,11 +84,15 @@ function die ()
 # Initialization
 
 # Check if all commands are present
+for cmd in "WEBAP_CMD"
+do
+   test -x ${!cmd} || die "Missing command ${cmd}"
+done
 
 # Find instances to backup
 if [ "${INSTANCES}" == "" ]
 then
-   INSTANCES="$( $WEBAP_CMD --list-installs mediawiki )"
+   INSTANCES="$( $WEBAP_CMD --list-installs mediawikia )"
 fi
 
 ##############
@@ -114,15 +107,16 @@ do
    if [ -e ${lockFile} ]
    then
       error "The lockfile ${lockFile} already exists. Continuing anyway, but the database dump for this instance might not be consistent."
+      errorCount=$((errorCount + 1))
    else
+      # Write the message to the lock file
       echo "${LOCK_MSG}" >${lockFile}
+      # Change permission so that the webserver can read the file
       chmod a+r ${lockFile}
    fi
 
 done
 
-echo "sleeping"
-sleep 10
 
 ##############
 # Dumping
@@ -133,6 +127,7 @@ if [ ${?} != 0 ]
 then
    error "Dumping the databases failed with the following error:"
    error "${dumpLog}"
+   errorCount=$((errorCount + 1))
 else
    info "Success. The dump says:"
    info "${dumpLog}"
@@ -142,7 +137,17 @@ fi
 # Copying
 #
 info "Runnig the copy command"
-# copyLog="$( )"
+# copyLog="$( ${POST_JOB} )"
+copyLog="$( true )"
+if [ ${?} != 0 ]
+then
+   error "The copy command failed with the following error:"
+   error "${copyLog}"
+   errorCount=$((errorCount + 1))
+else
+   info "Success. The dump says:"
+   info "${copyLog}"
+fi
 
 ##############
 # Unlocking
@@ -162,7 +167,16 @@ do
       else
          error "Because the lockfile is missing"
       fi
+      errorCount=$((errorCount + 1))
    fi
 
 done
 
+if [ ${errorCount} == 0 ]
+then
+   info "Everything went fine. Exiting."
+   exit 0
+else
+   error "There have been error. Exiting."
+   exit 1
+fi
