@@ -55,7 +55,7 @@ source "$CONFIG_FILE"
 LIB_DIR=${LIB_DIR:="/usr/share/stepping-stone/lib/bash"}
 
 source "${LIB_DIR}/input-output.lib.sh" && source "${LIB_DIR}/syslog.lib.sh"
-if [ ${?} != 0 ]
+if [ "${?}" != "0" ]
 then
    echo "Could not source the needed libs" >&2
    exit 1
@@ -84,18 +84,26 @@ errorCount=0
 function checkCmd () {
    if [ ${?} != 0 ]
    then
+      # use 'error' as default severity
       severity="error"
+
       if [ "${4}" != "" ]
       then
+         # set severity to parameter 4 if its set
          severity="${4}"
       fi
 
+      # send messages to the specific loglevel
       ${severity} "Command ${1} failed with status ${2}: ${3}"
+
+      # increase the error counter
       errorCount=$((errorCount + 1))
+
    else
       debug "Successfully run ${1} "
    fi
 }
+
 
 ################################################################################
 # The actual start of the script
@@ -128,6 +136,11 @@ for instance in ${INSTANCES}
 do
    info "Locking ${instance}"
 
+   if [ ! -d ${instance} ]
+   then
+      checkCmd "test existence of ${instance}" "false" "is ${instance} really a mediawiki?"
+      continue
+   fi
    # Write the lockfile to prevent users from editing and show them a message
    lockFile="${instance}/${LOCK_FILE}"
    if [ -e ${lockFile} ]
