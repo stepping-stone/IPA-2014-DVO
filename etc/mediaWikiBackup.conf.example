@@ -20,3 +20,11 @@ DBDUMP_CMD="su -c /usr/sbin/mysql-backup.sh - mysql-backup"
 # The command that runs after the database(s) has been dumped
 POST_JOB="/usr/bin/OnlineBackup.pl -c /etc/OnlineBackup/OnlineBackup.conf"
 
+# The recipient of mails if something fails, leave empty to omit warn mails
+RCP_MAIL=""
+
+# The sender to set of mails if something fails
+SND_MAIL=""
+
+# The command used to send mails
+MAIL_CMD="/usr/bin/msmtp"
