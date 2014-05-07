@@ -11,12 +11,12 @@ INSTANCES=""
 # The file to lock the MediaWiki beginnig from the instance path
 LOCK_FILE="lockMessage.html"
 
-# What do we tell the users during the lock. HTML can be used
+# What do we tell the users during the lock. HTML tags can be used
 LOCK_MSG_EN="This MediaWiki is <b>locked for backup</b>. Come along again."
 
 # The database dump command
 DBDUMP_CMD="su -c /usr/sbin/mysql-backup.sh - mysql-backup"
 
-# The copy command
+# The command that runs after the database(s) has been dumped
 POST_JOB="/usr/bin/OnlineBackup.pl -c /etc/OnlineBackup/OnlineBackup.conf"
 
