@@ -38,21 +38,10 @@
 # mediaWikiBackup.sh
 ################################################################################
 
-
-
 ################################################################################
-# Define variables and source libraries
+# Source and define logging functions
 ################################################################################
 
-##########
-# Source the configuration file. It shall be under ../etc/mediaWikiBackup.conf
-CONFIG_FILE="$(dirname $0)/../etc/$( basename $0 .sh ).conf"
-
-source "$CONFIG_FILE"
-
-##########
-# Source some libraries
-# LIB_DIR=${LIB_DIR:="$(dirname $0)/../lib/bash"}
 LIB_DIR=${LIB_DIR:="/usr/share/stepping-stone/lib/bash"}
 
 source "${LIB_DIR}/input-output.lib.sh" && source "${LIB_DIR}/syslog.lib.sh"
@@ -62,28 +51,13 @@ then
    exit 1
 fi
 
-info "Starting $(basename $0)"
-
-##########
-# Set the commands (if they have not been set before)
-
-WEBAP_CMD="/usr/sbin/webapp-config"
-
-LOCK_MSG="${LOCK_MSG_EN}"
-
-errorCount=0
-
-################################################################################
-# Functions
-################################################################################
-
 # Check if the last command run successful
 # $1: Name of the command
 # $2: Exit status of the command
 # $3: What to print if it failed
 # $4: Severity as one of debug, info, error, die
-function checkCmd () {
-   if [ ${?} != 0 ]
+function checkReturnStatus () {
+   if [[ "${2}" != "0" ]]
    then
       # use 'error' as default severity
       severity="error"
@@ -101,9 +75,61 @@ function checkCmd () {
       errorCount=$((errorCount + 1))
 
    else
-      debug "Successfully run ${1} "
+      debug "Successfully run ${1}."
+
    fi
 }
+
+# Send mail
+# $1: recipient
+# $2: sender
+# $3: subject
+# $4: body
+function sendWarning () {
+   recipient="${1}"
+   sender="${2}"
+   subject="${3}"
+   body="${4}"
+
+   if [ -z "${recipient}" ]
+   then
+      checkReturnStatus "${MAIL_CMD}" "1" "Recipient is not set" "info"
+      return 0
+   fi
+    
+   cat << EOM | ${MAIL_CMD} -v ${recipient}
+From: <${sender}>
+To: <${recipient}>
+Date: $( date -R )
+subject: ${subject}
+${body}
+EOM
+   checkReturnStatus "${MAIL_CMD}" "$?" "Check log of ${MAIL_CMD}"
+}
+
+info "Starting $(basename $0)"
+
+################################################################################
+# Define variables
+################################################################################
+
+##########
+# Source the configuration file. It shall be under ../etc/mediaWikiBackup.conf
+CONFIG_FILE="$(dirname $0)/../etc/$( basename $0 .sh ).conf"
+
+source "$CONFIG_FILE"
+checkReturnStatus "source $CONFIG_FILE" "$?" "" "die"
+
+##########
+# Set the commands (if they have not been set before)
+
+WEBAP_CMD="/usr/sbin/webapp-config"
+
+LOCK_MSG="${LOCK_MSG_EN}"
+
+SCRIPT_LOCK="/var/run/$( basename $0 ).lock"
+
+errorCount=0
 
 
 ################################################################################
@@ -113,10 +139,32 @@ function checkCmd () {
 ##############
 # Initialization
 
+# Set a lock to prevent concurrent running of the script
+(
+flock -n 9 || checkReturnStatus "locking" "nolock" "We seem to be already running. If not, remove the lock file ${SCRIPT_LOCK} manually." "die"
+
 # Check if all commands are present
-for cmd in "${WEBAP_CMD}"
+for cmd in "${WEBAP_CMD} ${MAIL_CMD}"
 do
    test -x ${!cmd} || die "Missing command ${cmd}"
+done
+
+# Check command line parameters
+while getopts ":i:" option
+do
+   case $option in
+   i )
+      INSTANCES="${OPTARG}"
+      ;;
+   : )
+      echo "Option -${OPTARG} requires a parameter. Usage: $( basename $0 ) [-i instancePath]" >&2
+      exit 1
+      ;;
+   * )
+      echo "Unknown parameter ${OPTARG}. Usage: $( basename $0 ) [-i instancePath]" >&2
+      exit 1
+      ;;
+   esac
 done
 
 # Find instances to backup
@@ -124,37 +172,41 @@ if [ "${INSTANCES}" == "" ]
 then
    cmd="$WEBAP_CMD --list-installs mediawiki"
    INSTANCES="$( ${cmd} )"
-   checkCmd "${cmd}" "$?" "output is '${INSTANCES}'" "die"
+   checkReturnStatus "${cmd}" "$?" "output is '${INSTANCES}'" "die"
 fi
 
-info "Found the following instances: $( echo "${INSTANCES}" | tr "\n" " " )"
+info "Going to process the following instances: $( echo "${INSTANCES}" | tr "\n" " " )"
 
 ##############
-# Locking
+# Locking the MediaWiki instances
 #
 
 for instance in ${INSTANCES}
 do
    info "Locking ${instance}"
 
-   if [ ! -d ${instance} ]
+   if ! [[ -d ${instance} ]]
    then
-      checkCmd "test existence of ${instance}" "false" "is ${instance} really a mediawiki?"
+      checkReturnStatus "test existence of ${instance}" "1" "is ${instance} really a mediawiki?"
+      echo "failed lock of ${instance}"
+      # Skip this instance if its missing
       continue
    fi
+
    # Write the lockfile to prevent users from editing and show them a message
    lockFile="${instance}/${LOCK_FILE}"
    if [ -e ${lockFile} ]
    then
       error "The lockfile ${lockFile} already exists. Continuing anyway, but the database dump for this instance might not be consistent."
       errorCount=$((errorCount + 1))
+
    else
       # Write the message to the lock file
       echo "${LOCK_MSG}" >${lockFile}
-      checkCmd "writing to ${lockFile}" "$?" ""
+      checkReturnStatus "writing to ${lockFile}" "$?" ""
       # Change permission so that the webserver can read the file
       chmod a+r ${lockFile}
-      checkCmd "chmod on ${lockFile}" "$?" ""
+      checkReturnStatus "chmod on ${lockFile}" "$?" ""
    fi
 
 done
@@ -165,15 +217,15 @@ done
 #
 info "Dumping the databases"
 ${DBDUMP_CMD}
-checkCmd "${DBDUMP_CMD}" "$?" "Check the mysql-dump script log"
+checkReturnStatus "${DBDUMP_CMD}" "$?" "Check the mysql-dump script log"
 
 
 ##############
-# Copying
+# Post command
 #
-info "Runnig the copy command"
+info "Runnig the post command"
 ${POST_JOB}
-checkCmd "${POST_JOB}" "$?" "Check the online backup script log"
+checkReturnStatus "${POST_JOB}" "$?" "Check the online backup script log"
 
 
 ##############
@@ -204,6 +256,10 @@ then
    info "Everything went fine. Exiting."
    exit 0
 else
+   sendWarning "${RCP_MAIL}" "${SND_MAIL}" "$( basename $0 ) on $( hostname ) ended with errors." "There have been error during the run of $( basename $0 ) on $( hostname ). Please log in to the machine and have a look at the logfile"
    error "There have been errors. Exiting."
    exit 1
 fi
+
+# Remove the lock from the script
+) 9>${SCRIPT_LOCK}
