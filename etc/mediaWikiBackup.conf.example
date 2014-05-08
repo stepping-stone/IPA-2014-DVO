@@ -12,7 +12,7 @@ INSTANCES=""
 LOCK_FILE="lockMessage.html"
 
 # What do we tell the users during the lock. HTML tags can be used
-LOCK_MSG_EN="<p align="center" style="font-size:2em;">This MediaWiki is <span style="color:red; font-weight:bold">locked for backup</span>. Come along again.</p><p align="center">If you think that this process already took too long, please contact your [mailto:wiki-admin@example.org Wiki Administrator]</p><br />"
+LOCK_MSG_EN="<p align='center' style='font-size:2em;'>This MediaWiki is <span style='color:red; font-weight:bold'>locked for backup</span>. Come along again.</p><p align='center'>If you think that this process already took too long, please contact your [mailto:wiki-admin@example.org Wiki Administrator]</p><br />"
 
 # The database dump command
 DBDUMP_CMD="su -c /usr/sbin/mysql-backup.sh - mysql-backup"
